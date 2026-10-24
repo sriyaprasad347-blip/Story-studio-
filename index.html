@@ -1,0 +1,94 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0b14"><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><title>My AI Story Studio</title>
+<style>
+:root{--bg:#0b0b14;--card:#151524;--line:#26263a;--tx:#ececf6;--mut:#9a9ab5;--ac:#f5b942;--ac2:#8b5cf6}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -10%,#2a1b4d,#0b0b14 60%) fixed;color:var(--tx);font:16px system-ui,sans-serif;padding:env(safe-area-inset-top) 0 calc(80px + env(safe-area-inset-bottom))}
+main{max-width:720px;margin:auto;padding:14px}h1,h2,h3{margin:.3em 0}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin:12px 0}
+input,textarea,select{width:100%;background:#0e0e1a;color:var(--tx);border:1px solid var(--line);border-radius:12px;padding:12px;font:inherit;margin:4px 0 8px}textarea{min-height:140px}
+button,.btn{background:var(--ac);color:#1a1200;border:0;border-radius:12px;padding:12px 14px;font:600 15px system-ui;min-height:44px;margin:2px}
+.g{background:#24243a!important;color:var(--tx)!important}.x{background:#3a1820!important;color:#ff9aa8!important}button:disabled{opacity:.5}
+.chips,.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.row>*{flex:1}.chip{padding:10px 14px;border-radius:99px;background:#1d1d31;border:1px solid var(--line);color:var(--tx);font-weight:500}.chip.on{background:var(--ac2);border-color:var(--ac2)}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:#0d0d18f2;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav a{flex:1;text-align:center;padding:8px 0;color:var(--mut);font-size:11px}nav a.on{color:var(--ac)}nav b{display:block;font-size:20px}
+.tag{font-size:12px;padding:3px 8px;border-radius:8px}.ok{background:#12351f;color:#7ee2a0}.demo{background:#3a2f10;color:#f5d27a}.off{background:#3a1820;color:#ff9aa8}
+img.th{width:84px;height:84px;flex:none;object-fit:cover;border-radius:12px;background:#222}.mut{color:var(--mut);font-size:14px}pre{white-space:pre-wrap;font-size:13px;background:#0e0e1a;padding:10px;border-radius:10px}
+#toast{position:fixed;left:50%;bottom:92px;transform:translateX(-50%);background:#fff;color:#000;padding:10px 16px;border-radius:12px;display:none;z-index:9;max-width:90%}
+.hero{padding:34px 8px;text-align:center}.hero h1{font-size:34px;background:linear-gradient(90deg,#f5b942,#c084fc);-webkit-background-clip:text;color:transparent}
+</style></head><body><main></main>
+<nav><a data-a=go data-x=home><b>🎬</b>Home</a><a data-a=go data-x=story><b>✍️</b>Story</a><a data-a=go data-x=scenes><b>🎞️</b>Scenes</a><a data-a=go data-x=cast><b>🧑‍🎤</b>Cast</a><a data-a=go data-x=voices><b>🎙️</b>Voices</a><a data-a=go data-x=lib><b>📚</b>Library</a></nav><div id=toast></div>
+<script>
+// ===== Config: set API_BASE to your Cloudflare Worker URL later (see README). Never put API keys here. =====
+const API_BASE='';
+const $=s=>document.querySelector(s),e=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=()=>Math.random().toString(36).slice(2,9);
+const STYLES={anime:'Anime',ghibli:'Ghibli-inspired',cartoon:'2D / 3D Cartoon',real:'Realistic Cinematic'};
+const SP={anime:'anime style, vivid colors, expressive eyes',ghibli:'soft hand-painted watercolor backgrounds, gentle pastoral mood, Ghibli-inspired',cartoon:'stylized 2D/3D cartoon, bold shapes, friendly look',real:'photorealistic cinematic film still, dramatic lighting'};
+const RATIOS={'16:9':'Landscape 16:9','9:16':'Portrait 9:16','1:1':'Square 1:1'},LANGS={en:'English',hi:'हिन्दी Hindi'};
+const PH='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8" fill="#222"/><text x="4" y="5.5" font-size="4" text-anchor="middle">🖼</text></svg>');
+const blank=()=>({id:uid(),title:'Untitled story',text:'',style:'anime',lang:'en',ratio:'9:16',scenes:[],chars:[],locs:[]});
+const ld=k=>{try{return JSON.parse(localStorage.getItem('ass_'+k))}catch{return null}};
+const put=(k,v)=>{try{localStorage.setItem('ass_'+k,JSON.stringify(v))}catch{toast('Storage full – export projects, use smaller images')}};
+let S=ld('last')||blank(),V='home',voices=[],tm;
+const dirty=()=>{clearTimeout(tm);tm=setTimeout(()=>put('last',S),400)};
+function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2600)}
+const st=(c,t)=>`<p><span class="tag ${c}">${{ok:'Working',demo:'Demo',off:'Not connected'}[c]}</span> ${t}</p>`;
+const chips=(k,o)=>`<div class=chips>${Object.entries(o).map(([v,l])=>`<button class="chip ${S[k]===v?'on':''}" data-a=set data-x=${k} data-y="${v}">${l}</button>`).join('')}</div>`;
+const words=t=>t.split(/\s+/).filter(Boolean).length;
+const pr=sc=>{const l=S.locs.find(x=>x.id===sc.loc),cs=S.chars.filter(c=>(sc.chars||[]).includes(c.id));return `${SP[S.style]}, ${S.ratio} frame. Setting: ${l?l.name+' – '+l.desc:'(no location set)'}. Characters: ${cs.map(c=>`${c.name} (${[c.age,c.face,c.hair,c.clothes,c.look].filter(Boolean).join('; ')})`).join(' | ')||'none'}. Moment: ${sc.text.slice(0,300).replace(/\s+/g,' ')}`};
+const shrink=f=>new Promise(r=>{const i=new Image();i.onload=()=>{const k=Math.min(1,360/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);r(c.toDataURL('image/jpeg',.7))};i.src=URL.createObjectURL(f)});
+function chunk(p){if(p.length<=1200)return[p];const s=p.match(/[^.!?।]+[.!?।]*["”’]?\s*/g)||[p];if(s.join('')!==p)return[p];const o=[];let c='';for(const x of s){if(c&&c.length+x.length>900){o.push(c);c=''}c+=x}if(c)o.push(c);return o}
+function plan(){const t=S.text.replace(/\r/g,'').trim();if(!t)return toast('Paste a story first');
+ if(S.scenes.length&&!confirm('Replace your current scene list?'))return;
+ const ps=t.split(/\n\s*\n/).filter(x=>x.trim()).flatMap(chunk),sc=[];let cur=[],n=0;
+ for(const p of ps){const brk=/^\s*(chapter|अध्याय|भाग|\*\*\*|---|###)/i.test(p)&&p.length<60;if(cur.length&&(brk||n+p.length>900)){sc.push(cur.join('\n\n'));cur=[];n=0}cur.push(p);n+=p.length}
+ if(cur.length)sc.push(cur.join('\n\n'));
+ S.scenes=sc.map((x,i)=>({id:uid(),title:'Scene '+(i+1),text:x,loc:'',chars:[]}));dirty();go('scenes');toast(sc.length+' scenes created – review & edit them')}
+const V_={
+home:()=>`<div class=hero><div style="font-size:54px">🎬</div><h1>My AI Story Studio</h1><p class=mut>Turn your novels and stories into animated videos.</p><button data-a=go data-x=story>✍️ Start a story</button></div>
+<div class=card><h3>Current project</h3><p>${e(S.title)} · ${S.scenes.length} scenes · ${S.chars.length} characters · ${S.locs.length} locations</p></div>
+<div class=card><h3>What works today</h3>${st('ok','Paste or upload a TXT story, choose style/language/ratio')}${st('ok','Scene planner with full editing + word-coverage check')}${st('ok','Character Bible, locations, reference images')}${st('ok','Voice assignment &amp; preview (your phone’s own voices)')}${st('ok','Project library, export/import, offline install (PWA)')}${st('demo','Prompt builder – writes text prompts only; no image is created')}${st('off','AI image generation')}${st('off','AI video generation &amp; final video assembly')}${st('off','Cloud text-to-speech voices')}<p class=mut>Nothing marked “Not connected” produces output until you connect a provider (README, step 6).</p></div>`,
+story:()=>`<div class=card><h3>Story</h3><input placeholder="Title" value="${e(S.title)}" data-b="title"><textarea id=tx placeholder="Paste your novel or short story here…" data-b="text" style="min-height:260px">${e(S.text)}</textarea><p class=mut id=wc>${words(S.text)} words</p>
+<label class="btn g" style="display:block;text-align:center">📄 Upload TXT file (UTF-8)<input type=file accept=".txt,text/plain" data-file=txt hidden></label></div>
+<div class=card><h3>Visual style</h3>${chips('style',STYLES)}<h3>Story language</h3>${chips('lang',LANGS)}<h3>Video shape</h3>${chips('ratio',RATIOS)}</div><button data-a=plan style="width:100%">🎞️ Plan scenes</button>`,
+scenes:()=>{const a=words(S.text),b=words(S.scenes.map(x=>x.text).join(' ')),ok=a===b;return `<h2>Scene plan</h2><p class=mut>Edit anything. Your text is never removed automatically.</p>${S.scenes.length?`<p><span class="tag ${ok?'ok':'demo'}">${ok?`✔ All ${a} words preserved`:`Scenes have ${b} words, story has ${a} – check this is intended`}</span></p>`:'<div class=card>No scenes yet. Go to Story → Plan scenes.</div>'}
+${S.scenes.map((s,i)=>`<div class=card><input value="${e(s.title)}" data-b="scenes:${s.id}:title"><textarea id="t_${s.id}" data-b="scenes:${s.id}:text">${e(s.text)}</textarea>
+<select data-b="scenes:${s.id}:loc"><option value="">📍 Location…</option>${S.locs.map(l=>`<option value="${l.id}" ${s.loc===l.id?'selected':''}>${e(l.name)}</option>`).join('')}</select>
+<div class=chips>${S.chars.map(c=>`<button class="chip ${(s.chars||[]).includes(c.id)?'on':''}" data-a=tc data-x=${s.id} data-y=${c.id}>${e(c.name||'?')}</button>`).join('')||'<span class=mut>Add characters in Cast</span>'}</div>
+<div class=chips style="margin-top:8px"><button class=g data-a=mv data-x=${s.id} data-y=-1>↑</button><button class=g data-a=mv data-x=${s.id} data-y=1>↓</button><button class=g data-a=split data-x=${s.id}>Split at cursor</button><button class=g data-a=merge data-x=${s.id}>Merge ↓</button><button class=x data-a=delsc data-x=${s.id}>Delete</button></div>
+<details><summary class=mut style="margin-top:8px">Image prompt (demo)</summary><pre>${e(pr(s))}</pre><button class=g data-a=copy data-x=${s.id}>Copy</button><button disabled>Generate image – not connected</button><button disabled>Generate video – not connected</button></details></div>`).join('')}
+<button class=g data-a=addsc style="width:100%">+ Add scene</button>`},
+cast:()=>`<h2>Character Bible</h2>${S.chars.map(c=>`<div class=card><div class=row><img class=th src="${c.img||PH}"><div><input placeholder=Name value="${e(c.name)}" data-b="chars:${c.id}:name"><input placeholder=Age value="${e(c.age)}" data-b="chars:${c.id}:age"></div></div>
+<input placeholder="Face (shape, eyes, skin, marks)" value="${e(c.face)}" data-b="chars:${c.id}:face"><input placeholder=Hairstyle value="${e(c.hair)}" data-b="chars:${c.id}:hair"><input placeholder=Clothing value="${e(c.clothes)}" data-b="chars:${c.id}:clothes"><input placeholder="Other appearance notes" value="${e(c.look)}" data-b="chars:${c.id}:look">
+<label class="btn g">🖼 Reference image<input type=file accept=image/* data-file=img data-x="chars:${c.id}" hidden></label><button class=x data-a=del data-x=chars data-y=${c.id}>Delete</button></div>`).join('')}<button data-a=add data-x=chars style="width:100%">+ Add character</button>
+<h2 style="margin-top:24px">Locations</h2>${S.locs.map(l=>`<div class=card><div class=row><img class=th src="${l.img||PH}"><div><input placeholder="Name" value="${e(l.name)}" data-b="locs:${l.id}:name"></div></div><textarea style="min-height:70px" placeholder="Describe the background" data-b="locs:${l.id}:desc">${e(l.desc)}</textarea>
+<label class="btn g">🖼 Reference image<input type=file accept=image/* data-file=img data-x="locs:${l.id}" hidden></label><button class=x data-a=del data-x=locs data-y=${l.id}>Delete</button></div>`).join('')}<button data-a=add data-x=locs style="width:100%">+ Add location</button>`,
+voices:()=>{const m=S.lang,vs=[...voices].sort((a,b)=>(b.lang.startsWith(m))-(a.lang.startsWith(m)));return `<h2>Voices</h2><p class=mut>Uses voices installed on your phone. ${vs.length?'':'<b>No voices found.</b> On Android: Settings → Text-to-speech, install Hindi/English voice data.'}</p>${S.chars.map(c=>`<div class=card><h3>${e(c.name||'Unnamed')}</h3><select data-b="chars:${c.id}:voice"><option value="">Default voice</option>${vs.map(v=>`<option value="${e(v.voiceURI)}" ${c.voice===v.voiceURI?'selected':''}>${e(v.name)} (${v.lang})</option>`).join('')}</select><label class=mut>Speed</label><input type=range min=.5 max=1.5 step=.1 value="${c.rate||1}" data-b="chars:${c.id}:rate"><label class=mut>Pitch</label><input type=range min=.5 max=1.8 step=.1 value="${c.pitch||1}" data-b="chars:${c.id}:pitch"><button data-a=say data-x=${c.id}>▶ Preview</button><button disabled>Cloud voice – not connected</button></div>`).join('')||'<div class=card>Add characters in Cast first.</div>'}`},
+lib:()=>{const L=Object.values(ld('lib')||{}).sort((a,b)=>b.saved-a.saved);return `<h2>Project library</h2><div class=card><button data-a=save>💾 Save this project</button><button class=g data-a=newp>＋ New</button><button class=g data-a=exp>⬇ Export file</button><label class="btn g">⬆ Import<input type=file accept=".json" data-file=imp hidden></label></div>${L.map(p=>`<div class=card><b>${e(p.title)}</b><p class=mut>${p.scenes.length} scenes · ${p.chars.length} characters · ${new Date(p.saved).toLocaleString()}</p><button data-a=open data-x=${p.id}>Open</button><button class=x data-a=delp data-x=${p.id}>Delete</button></div>`).join('')||'<p class=mut>No saved projects yet.</p>'}`}};
+function render(){$('main').innerHTML=V_[V]();document.querySelectorAll('nav a').forEach(a=>a.classList.toggle('on',a.dataset.x===V))}
+function go(v){V=v;render();scrollTo(0,0)}
+const sc_=id=>S.scenes.find(x=>x.id===id),idx=id=>S.scenes.findIndex(x=>x.id===id);
+const A={go,plan,set:(k,v)=>{S[k]=v;dirty();render()},
+tc:(s,c)=>{const o=sc_(s);o.chars=o.chars||[];o.chars.includes(c)?o.chars.splice(o.chars.indexOf(c),1):o.chars.push(c);dirty();render()},
+mv:(id,d)=>{const i=idx(id),j=i+ +d;if(j<0||j>=S.scenes.length)return;[S.scenes[i],S.scenes[j]]=[S.scenes[j],S.scenes[i]];dirty();render()},
+split:id=>{const t=$('#t_'+id),p=t.selectionStart,s=sc_(id);if(p<=0||p>=t.value.length)return toast('Tap inside the text where the new scene should start');const a=t.value.slice(0,p),b=t.value.slice(p);s.text=a;S.scenes.splice(idx(id)+1,0,{id:uid(),title:s.title+' (b)',text:b,loc:s.loc,chars:[...(s.chars||[])]});dirty();render()},
+merge:id=>{const i=idx(id);if(i>=S.scenes.length-1)return;S.scenes[i].text+='\n\n'+S.scenes[i+1].text;S.scenes.splice(i+1,1);dirty();render()},
+delsc:id=>{if(confirm('Delete this scene and its text?')){S.scenes.splice(idx(id),1);dirty();render()}},
+addsc:()=>{S.scenes.push({id:uid(),title:'Scene '+(S.scenes.length+1),text:'',loc:'',chars:[]});dirty();render()},
+copy:id=>navigator.clipboard.writeText(pr(sc_(id))).then(()=>toast('Copied'),()=>toast('Copy failed')),
+add:k=>{S[k].push(k==='chars'?{id:uid(),name:'',age:'',face:'',hair:'',clothes:'',look:'',img:'',voice:''}:{id:uid(),name:'',desc:'',img:''});dirty();render()},
+del:(k,id)=>{if(confirm('Delete?')){S[k]=S[k].filter(x=>x.id!==id);dirty();render()}},
+say:id=>{const c=S.chars.find(x=>x.id===id),v=voices.find(x=>x.voiceURI===c.voice),u=new SpeechSynthesisUtterance(S.lang==='hi'?'नमस्ते, मैं '+(c.name||'आपका किरदार')+' हूँ।':'Hello, I am '+(c.name||'your character')+'.');u.voice=v||null;u.lang=v?v.lang:S.lang==='hi'?'hi-IN':'en-US';u.rate=+c.rate||1;u.pitch=+c.pitch||1;speechSynthesis.cancel();speechSynthesis.speak(u)},
+save:()=>{const L=ld('lib')||{};L[S.id]={...S,saved:Date.now()};put('lib',L);put('last',S);render();toast('Saved')},
+newp:()=>{S=blank();dirty();go('story')},open:id=>{S=ld('lib')[id];dirty();go('story')},
+delp:id=>{if(confirm('Delete project?')){const L=ld('lib');delete L[id];put('lib',L);render()}},
+exp:()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(S)],{type:'application/json'}));a.download=(S.title||'story')+'.json';a.click()}};
+document.addEventListener('click',ev=>{const b=ev.target.closest('[data-a]');if(b)A[b.dataset.a]?.(b.dataset.x,b.dataset.y)});
+document.addEventListener('input',ev=>{const t=ev.target.dataset.b;if(!t)return;const[c,id,f]=t.split(':');if(!id)S[c]=ev.target.value;else S[c].find(x=>x.id===id)[f]=ev.target.value;if(t==='text')$('#wc').textContent=words(S.text)+' words';dirty()});
+document.addEventListener('change',async ev=>{const t=ev.target,k=t.dataset.file,f=t.files?.[0];if(!k||!f)return;
+ if(k==='txt'){S.text=await f.text();if(S.title==='Untitled story')S.title=f.name.replace(/\.txt$/i,'');dirty();render();toast('Loaded '+words(S.text)+' words')}
+ if(k==='img'){const[c,id]=t.dataset.x.split(':');S[c].find(x=>x.id===id).img=await shrink(f);dirty();render()}
+ if(k==='imp'){try{const p=JSON.parse(await f.text());if(!p.id||!Array.isArray(p.scenes))throw 0;S=p;dirty();go('story')}catch{toast('Not a valid project file')}}});
+function loadV(){voices=speechSynthesis.getVoices()||[];if(V==='voices')render()}
+if('speechSynthesis'in window){loadV();speechSynthesis.onvoiceschanged=loadV}
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+render();
+</script></body></html>
